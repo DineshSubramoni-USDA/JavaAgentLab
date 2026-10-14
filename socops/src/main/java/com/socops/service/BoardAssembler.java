@@ -49,6 +49,13 @@ public final class BoardAssembler {
         return freshBoard;
     }
 
+    /** Produce an independent board for each player in a new game. */
+    public static List<List<BingoCell>> assembleNewBoards(int playerCount) {
+        return IntStream.range(0, playerCount)
+                .mapToObj(player -> assembleNewBoard())
+                .toList();
+    }
+
     /* ------------------------------------------------------------------ */
     /*  Cell toggling                                                      */
     /* ------------------------------------------------------------------ */
