@@ -13,6 +13,8 @@ import java.util.List;
 @Controller
 public class BingoRestController {
 
+    private static final int PLAYER_COUNT = 4;
+
     @GetMapping("/")
     public String serveLobbyPage() {
         return "game";
@@ -22,5 +24,11 @@ public class BingoRestController {
     @ResponseBody
     public List<BingoCell> dispenseFreshBoard() {
         return BoardAssembler.assembleNewBoard();
+    }
+
+    @GetMapping("/api/bingo/setup")
+    @ResponseBody
+    public List<List<BingoCell>> setUpGame() {
+        return BoardAssembler.assembleNewBoards(PLAYER_COUNT);
     }
 }

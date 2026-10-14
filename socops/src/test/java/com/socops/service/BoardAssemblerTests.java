@@ -51,6 +51,24 @@ class BoardAssemblerTests {
         }
     }
 
+    @Test
+    @DisplayName("Four-player setup creates four independent boards")
+    void fourPlayerSetupCreatesIndependentBoards() {
+        List<List<BingoCell>> boards = BoardAssembler.assembleNewBoards(4);
+
+        assertEquals(4, boards.size());
+        boards.forEach(board -> {
+            assertEquals(25, board.size());
+            assertTrue(board.get(12).freeCell());
+            assertTrue(board.get(12).selected());
+        });
+
+        List<BingoCell> firstBoardAfterFlip = BoardAssembler.flipCell(boards.get(0), 0);
+        assertTrue(firstBoardAfterFlip.get(0).selected());
+        assertFalse(boards.get(1).get(0).selected(),
+                "Marking one player's board must not alter another player's board");
+    }
+
     /* ── cell toggling ────────────────────────────────────────── */
 
     @Test

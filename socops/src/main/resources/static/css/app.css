@@ -33,6 +33,7 @@ body {
 
 /* ── grid ──────────────────────────────────────────────────────── */
 .grid        { display: grid; }
+.grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .gap-1       { gap: 0.25rem; }
 
