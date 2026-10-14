@@ -33,7 +33,7 @@
 
         <button onclick="launchGame()"
                 class="w-full bg-accent text-white font-semibold py-4 px-8 rounded-lg text-lg accent-active transition-colors">
-            Start Game
+            Start 4-Player Game
         </button>
     </div>
 </div>
@@ -53,9 +53,15 @@
         <div class="w-16"></div>
     </header>
 
+    <div id="playerSwitcher"
+         class="grid grid-cols-4 gap-1 px-4 py-2 bg-white border-b border-gray-200">
+        <!-- player buttons injected by JS -->
+    </div>
+
     <!-- hint -->
     <p class="text-center text-gray-500 text-sm py-2 px-4">
-        Tap a square when you find someone who matches it.
+        <strong id="currentPlayerName" class="text-gray-800">Player 1</strong>:
+        tap a square when you find someone who matches it.
     </p>
 
     <!-- bingo banner (hidden until victory) -->
@@ -83,7 +89,7 @@
     <div class="bg-white rounded-xl p-6 max-w-xs w-full text-center shadow-xl animate-[bounce_0.5s_ease-out]">
         <div class="text-5xl mb-4">&#127881;</div>
         <h2 class="text-3xl font-bold text-amber-500 mb-2">BINGO!</h2>
-        <p class="text-gray-600 mb-6">You completed a line!</p>
+        <p class="text-gray-600 mb-6"><span id="victoryPlayerName">Player 1</span> completed a line!</p>
         <button onclick="dismissVictoryModal()"
                 class="w-full bg-accent text-white font-semibold py-3 px-6 rounded-lg accent-active transition-colors">
             Keep Playing
@@ -100,12 +106,12 @@
 
     var SIDE = 5;
     var TOTAL_CELLS = SIDE * SIDE;
+    var PLAYER_COUNT = 4;
     var PERSIST_KEY = "socops-bingo-snapshot";
 
     /* ── state ────────────────────────────────────────────────── */
-    var liveTiles   = [];          /* Array of BingoCell objects  */
-    var streakFound = null;        /* WinningStreak or null       */
-    var modalShown  = false;
+    var players = [];
+    var activePlayerIndex = 0;
     var currentPhase = "LOBBY";    /* LOBBY | ACTIVE | VICTORY    */
 
     /* ── DOM refs ─────────────────────────────────────────────── */
@@ -114,23 +120,33 @@
     var gridDiv    = document.getElementById("gridContainer");
     var bannerDiv  = document.getElementById("bingoBanner");
     var overlayDiv = document.getElementById("victoryOverlay");
+    var switcherDiv = document.getElementById("playerSwitcher");
+    var currentPlayerName = document.getElementById("currentPlayerName");
+    var victoryPlayerName = document.getElementById("victoryPlayerName");
+
+    function activePlayer() {
+        return players[activePlayerIndex];
+    }
 
     /* ── phase switching ──────────────────────────────────────── */
     function showPhase(phase) {
         currentPhase = phase;
         lobbyDiv.style.display   = (phase === "LOBBY") ? "" : "none";
         activeDiv.style.display  = (phase !== "LOBBY") ? "" : "none";
-        bannerDiv.style.display  = (streakFound)       ? "" : "none";
-        overlayDiv.style.display = (modalShown)        ? "" : "none";
+        var player = activePlayer();
+        bannerDiv.style.display  = (player && player.streak) ? "" : "none";
+        overlayDiv.style.display = (player && player.modal)  ? "" : "none";
     }
 
     /* ── board rendering ──────────────────────────────────────── */
     function paintGrid() {
+        var player = activePlayer();
+        if (!player) { return; }
         gridDiv.innerHTML = "";
-        var winIds = streakFound ? gatherStreakIds(streakFound) : {};
+        var winIds = player.streak ? gatherStreakIds(player.streak) : {};
 
-        for (var t = 0; t < liveTiles.length; t++) {
-            var tile = liveTiles[t];
+        for (var t = 0; t < player.tiles.length; t++) {
+            var tile = player.tiles[t];
             var btn = document.createElement("button");
 
             /* base styling identical to the original Blazor BingoSquare */
@@ -177,22 +193,44 @@
         }
     }
 
+    function paintPlayerSwitcher() {
+        switcherDiv.innerHTML = "";
+        for (var p = 0; p < players.length; p++) {
+            var player = players[p];
+            var button = document.createElement("button");
+            button.className = "py-2 px-3 rounded text-sm font-semibold transition-colors " +
+                    (p === activePlayerIndex
+                            ? "bg-accent text-white"
+                            : "bg-gray-100 text-gray-700 tile-active");
+            button.textContent = player.name + (player.streak ? " \u2713" : "");
+            button.setAttribute("aria-pressed", String(p === activePlayerIndex));
+            button.addEventListener("click", (function (playerIndex) {
+                return function () { selectPlayer(playerIndex); };
+            })(p));
+            switcherDiv.appendChild(button);
+        }
+        currentPlayerName.textContent = activePlayer().name;
+        victoryPlayerName.textContent = activePlayer().name;
+    }
+
     /* ── tile tap logic ───────────────────────────────────────── */
     function onTileTapped(cellId) {
-        liveTiles = flipTile(liveTiles, cellId);
+        var player = activePlayer();
+        player.tiles = flipTile(player.tiles, cellId);
 
-        if (!streakFound) {
-            var detected = scanForStreak(liveTiles);
+        if (!player.streak) {
+            var detected = scanForStreak(player.tiles);
             if (detected) {
-                streakFound = detected;
+                player.streak = detected;
                 currentPhase = "VICTORY";
-                modalShown = true;
+                player.modal = true;
             }
         }
         persistSnapshot();
         paintGrid();
-        bannerDiv.style.display  = streakFound ? "" : "none";
-        overlayDiv.style.display = modalShown  ? "" : "none";
+        paintPlayerSwitcher();
+        bannerDiv.style.display  = player.streak ? "" : "none";
+        overlayDiv.style.display = player.modal  ? "" : "none";
     }
 
     /* ── board manipulation (mirrors BoardAssembler.java) ─────── */
@@ -264,9 +302,8 @@
         try {
             var blob = JSON.stringify({
                 phase: currentPhase,
-                tiles: liveTiles,
-                streak: streakFound,
-                modal: modalShown
+                players: players,
+                activePlayerIndex: activePlayerIndex
             });
             localStorage.setItem(PERSIST_KEY, blob);
         } catch (_) { /* storage full or unavailable */ }
@@ -277,10 +314,17 @@
             var raw = localStorage.getItem(PERSIST_KEY);
             if (!raw) { return false; }
             var snap = JSON.parse(raw);
-            if (!snap.tiles || snap.tiles.length !== TOTAL_CELLS) { return false; }
-            liveTiles   = snap.tiles;
-            streakFound = snap.streak || null;
-            modalShown  = !!snap.modal;
+            if (!snap.players || snap.players.length !== PLAYER_COUNT) { return false; }
+            for (var p = 0; p < snap.players.length; p++) {
+                if (!snap.players[p].tiles || snap.players[p].tiles.length !== TOTAL_CELLS) {
+                    return false;
+                }
+            }
+            players = snap.players;
+            activePlayerIndex = Number.isInteger(snap.activePlayerIndex)
+                    && snap.activePlayerIndex >= 0
+                    && snap.activePlayerIndex < PLAYER_COUNT
+                    ? snap.activePlayerIndex : 0;
             currentPhase = snap.phase || "ACTIVE";
             return currentPhase !== "LOBBY";
         } catch (_) { return false; }
@@ -288,36 +332,52 @@
 
     /* ── public API (called from onclick attrs) ───────────────── */
     window.launchGame = function () {
-        fetch("/api/bingo/fresh-board")
+        fetch("/api/bingo/setup")
             .then(function (resp) { return resp.json(); })
-            .then(function (cells) {
-                liveTiles   = cells;
-                streakFound = null;
-                modalShown  = false;
+            .then(function (boards) {
+                players = boards.map(function (cells, index) {
+                    return {
+                        name: "Player " + (index + 1),
+                        tiles: cells,
+                        streak: null,
+                        modal: false
+                    };
+                });
+                activePlayerIndex = 0;
                 currentPhase = "ACTIVE";
                 persistSnapshot();
+                paintPlayerSwitcher();
                 paintGrid();
                 showPhase("ACTIVE");
             });
     };
 
+    window.selectPlayer = function (playerIndex) {
+        activePlayerIndex = playerIndex;
+        currentPhase = activePlayer().streak ? "VICTORY" : "ACTIVE";
+        paintPlayerSwitcher();
+        paintGrid();
+        showPhase(currentPhase);
+        persistSnapshot();
+    };
+
     window.retreatToLobby = function () {
-        liveTiles   = [];
-        streakFound = null;
-        modalShown  = false;
+        players = [];
+        activePlayerIndex = 0;
         currentPhase = "LOBBY";
         persistSnapshot();
         showPhase("LOBBY");
     };
 
     window.dismissVictoryModal = function () {
-        modalShown = false;
+        activePlayer().modal = false;
         overlayDiv.style.display = "none";
         persistSnapshot();
     };
 
     /* ── boot ─────────────────────────────────────────────────── */
     if (restoreSnapshot()) {
+        paintPlayerSwitcher();
         paintGrid();
         showPhase(currentPhase);
     } else {
